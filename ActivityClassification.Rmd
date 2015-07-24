@@ -1,5 +1,5 @@
 ---
-title: "Classification for Weight Lifting Activity Recognition"
+title: "Classification for Weightlifting Activity Recognition"
 author: "Phanindra Reddigari"
 date: "Wednesday, July 22, 2015"
 output: html_document
@@ -58,7 +58,7 @@ names(pml.training)[-union(grep(pattern="accel|gyros|magnet",names(pml.training)
 
 The expressions for roll, pitch, yaw, picth, accel, gyros, magnet capture 152 variable names and leaves 8 variables in the dataset which are mostly for identification purposes
 
-## Preprocessing of Weigtlifting Activity Dataset  
+## Preprocessing of Weightlifting Activity Dataset  
 
 __Culling the identification variables from the potential predictors in selection for training__  
 
@@ -207,7 +207,8 @@ The Confusion matrix indicates reduced class error (mis-classification) for only
 plot(modelFit.rf.1000, main="Classification Error vs Number of Trees in Random Forest")
 ```  
 
-The classification error 
+The plot above indicates that the classification error rate declines rapidly as the number of trees (ntree) exceeds 50. 
+
 ```{r Random Forest Variable Importance Plot, fig.width=8, fig.height=8}
 varImpPlot(modelFit.rf.1000,main="Ranking of Predictors by Descending Importance")
 ```
@@ -259,8 +260,6 @@ modelPred_1000_Prob
 # Histogram of the tree sizes in the forest
 hist(treesize(modelFit.rf.1000))
 ```  
-
-The plot above indicates that the classification error rate declines rapidly as the number of trees (ntree) exceeds 50. 
 
 ###Identification of outliers in training dataset by class identification:  
 
