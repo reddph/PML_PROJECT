@@ -69,7 +69,7 @@ img {
 
 <div id="overview" class="section level2">
 <h2>Overview:</h2>
-<p>This Coursera Practical Machine Learning project report attempts to develop a classification model for supervised recognition of the quality of Weight lifting activity [Ref. 2]. The model is based on dataset from training 6 participants to lift barbells correctly and incorrectly in 5 different ways to constitute 5 classes for automatic classification. Based on known efficiencies, Random Forest method was chosen for training the classification model. The doParallel package was used on a multicore machine to siginificantly reduce the training time. The models from training were saved on disk for reloading subsequently for comparing classification errors of the variants of the random forest models. Random forest with inherent bootstrapping was compared with random forest with K-fold cross-validation (K=5 and K=10). The models do not appear to have significant differences in relation to confusion matrix and OOB errors. Other aspects of random forest, namely, variable importance, margin plots, tree size histograms, and outlier plots are used to examine the random forest model with ntree=1000. In addition, boosting method was also explored. Finally, the training models are used against test dataset to recognize the test classes. The RF and boosting models show identical classification decisions against the given 20 test vectors. However, it appears that RF with 10-fold cross-validation outperforms Boosting slightly in accuracy for this particular dataset. RF with 10-fold CV shows OOB error of 0.14% and accuracy of 0.9986240 for this particular dataset.</p>
+<p>This Coursera Practical Machine Learning project attempts to develop classification models for supervised recognition of the quality of Weight lifting activity [Ref. 2]. The model is based on dataset from training 6 participants to lift barbells correctly and incorrectly in 5 different ways to constitute 5 classes for automatic classification. Based on known efficiencies, Random Forest (RF) method was chosen for training classification models. The doParallel package was used on a multicore machine to siginificantly reduce the training time. The models from training were saved on disk for reloading subsequently for comparing classification errors of the variants of the RF models. RF with inherent bootstrapping was compared with RF with K-fold cross-validation (K=5 and K=10). The models do not appear to have significant differences in relation to confusion matrix and OOB errors. Other aspects of RF, namely, variable importance, margin plots, tree size histograms, and outlier plots were used to examine the random forest model with ntree=1000. In addition, Boosting method was also explored. Finally, the training models were used against test dataset to recognize the test classes. RF and Boosting models show identical classification decisions against 20 test vectors. However, it appears that RF with 10-fold cross-validation (CV) outperforms Boosting slightly in accuracy for this particular dataset. RF with 10-fold CV shows OOB error of 0.14% and accuracy of 0.9986240 for this particular dataset.</p>
 </div>
 <div id="references" class="section level2">
 <h2>References:</h2>
@@ -104,7 +104,7 @@ dim(pml.training)</code></pre>
 <pre><code>## [1] 19622   160</code></pre>
 <pre class="r"><code>dim(pml.testing)</code></pre>
 <pre><code>## [1]  20 160</code></pre>
-<p>To mitigate long computation time for training for a large number of predictors, let us use the doParallel package and register multiple cores for parallelism</p>
+<p>To mitigate long computation time for training for a large number of predictors, doParallel package was used to register multiple cores for parallelism</p>
 <pre class="r"><code>registerDoParallel(cores=6)
 
 # dataset exploration
@@ -144,7 +144,7 @@ setdiff(names(training2),names(testing2))</code></pre>
 <h2>Application of Random Forest Algorithm for Classification</h2>
 <pre class="r"><code>set.seed(12345)</code></pre>
 <p>Due to excessive computation time and memory requirements during training, the approach taken here is to compute the models during training, and then save the models to disk as a native RData files. The saved model files can be loaded into memory during the knitting time.</p>
-<p>To evaluate the training efficacy of Random Forest for the given training set, let us conduct a trial by dividing the training data into a training (sample probability = 0.7) and validation test subsets. Since the test subset created in this manner has known class for validation, we can examine the confusion matrix strictly for validation purposes. Once we are satisfied that Random Forest is yielding good results with the trail test set, we can proceed to use the complete training dataset for the classification task.</p>
+<p>To evaluate the training efficacy of Random Forest for the given training set, a trial was conducted by dividing the training data into a training (sample probability = 0.7) and validation test subsets. Since the test subset created in this manner has known class for validation, we can examine the confusion matrix strictly for validation purposes. Once we are satisfied that Random Forest is yielding good results with the trail test set, we can proceed to use the complete training dataset for the classification task.</p>
 <pre class="r"><code>InTrain&lt;-createDataPartition(y=training2$classe,p=0.7,list=FALSE)
 training1&lt;-training2[InTrain,]
 testing1 &lt;- training2[-InTrain,]
@@ -172,7 +172,7 @@ table(rfTrialPredict,testing1$classe)</code></pre>
 <pre><code>## [1] 5864</code></pre>
 <pre class="r"><code>length(testing1$predRight[testing1$predRight == FALSE])</code></pre>
 <pre><code>## [1] 21</code></pre>
-<p>From the trial assessment of the Random Forest with 70% training and 30% test subset, we see that the classification appears to be good with only 21 out of 5864. So we can now proceed with developing Random Forest model with the full training set. The model developed with the full training set will be used for the final test vector classification for the second part of the project.</p>
+<p>From the trial assessment of RF with 70% training and 30% test subset, we see that the classification appears to be good with an error rate of 21 out of 5864 on the trail test set. So we can now proceed with developing RF model with the full training set. The model developed with the full training set will be used for the final test vector classification for the second part of the project.</p>
 <p>In order to compare K-fold cross-validation candidates for optimal classification, let us use two cases: K=5 and K=10 for the full training set:</p>
 <p><strong>Case A: Cross-Validation, K=5</strong></p>
 <p>Other parameters considered for evaluation: * train control method is cv (cross-validation) with number = 5<br />* proximity = TRUE<br />* importance = TRUE for ranking predictors for mean decreasing error or mean decreasing Gini<br />* allowParallel = TRUE to enable multi-thread processing</p>
