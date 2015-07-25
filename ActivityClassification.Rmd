@@ -1,0 +1,293 @@
+---
+title: "Classification for Weightlifting Activity Recognition"
+author: "Phanindra Reddigari"
+date: "Friday, July 24, 2015"
+output: html_document
+---
+
+##Overview:    
+
+This Coursera Practical Machine Learning project attempts to develop classification models for supervised recognition of the quality of Weightlifting activity [Ref. 2]. The model is based on dataset from training 6 participants to lift barbells correctly and incorrectly in 5 different ways to constitute 5 classes for automatic classification. Based on known efficiencies, Random Forest (RF) method was chosen for training classification models. The doParallel package was used on a multicore machine to siginificantly reduce the training time. The models from training were saved on disk for reloading subsequently for comparing classification errors of the variants of the RF models. RF with inherent bootstrapping was compared with RF with K-fold cross-validation (K=5 and K=10). The models do not appear to have significant differences in relation to confusion matrix and OOB errors. Other aspects of RF, namely, variable importance, margin plots, tree size histograms, and outlier plots were used to examine the random forest model with ntree=1000. In addition, Boosting method was also explored. Finally, the training models were used against test dataset to recognize the test classes. RF and Boosting models show identical classification decisions against 20 test vectors. However, it appears that RF with 10-fold cross-validation (CV) outperforms Boosting slightly in accuracy for this particular dataset. RF with 10-fold CV shows OOB error of 0.14% and accuracy of 0.9986240 for this particular dataset.
+
+## References:  
+
+1. [CRAN Random Forest Package Details](https://cran.r-project.org/web/packages/randomForest/randomForest.pdf)
+2. [Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements](http://groupware.les.inf.puc-rio.br/public/papers/2012.Ugulino.WearableComputing.HAR.Classifier.RIBBON.pdf)
+3. [Random Forests: Leo Breiman and Adele Cutler](https://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm)
+4. [Why and how to use random forest variable importance measures (and how you shouldn't)](http://www.statistik.uni-dortmund.de/useR-2008/slides/Strobl+Zeileis.pdf)
+5. [Variable Importance Plot](http://www.inside-r.org/packages/cran/randomForest/docs/varImpPlot)
+
+## Evaluation of Candidate Models for Classification:
+
+```{r reference packages for classification,echo = TRUE, results="hide", echo=FALSE, warning=FALSE}
+library(doParallel)
+library(caret)
+library(randomForest)
+library(RColorBrewer)
+library(knitr)
+```  
+
+```{r setoptions, echo=TRUE, cache=TRUE}
+opts_chunk$set(echo=TRUE, cache=TRUE)
+```  
+
+```{r Importing of HAR dataset}
+setwd("C:/Users/phanindra.reddigari/Documents/R_Practice/PracticalMachineLearning")
+
+training_URL<-"http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test_URL<-"http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+# Read the URL 
+pml.training<-read.csv("pml-training.csv",na.strings=c("NA",""),header=TRUE)
+pml.testing<-read.csv("pml-testing.csv",na.strings=c("NA",""),header=TRUE)
+
+dim(pml.training)
+dim(pml.testing)
+
+```  
+
+To mitigate long computation time for training for a large number of predictors, let us use the doParallel package and register multiple cores for parallelism
+
+```{r set parallel processing}
+registerDoParallel(cores=6)
+
+# dataset exploration
+names(pml.training)[-union(grep(pattern="accel|gyros|magnet",names(pml.training), perl=TRUE),
+                           grep(pattern="roll|pitch|yaw|picth",names(pml.training),perl=TRUE))]
+`````
+
+The expressions for roll, pitch, yaw, picth, accel, gyros, magnet capture 152 variable names and leaves 8 variables in the dataset which are mostly for identification purposes
+
+## Preprocessing of Weightlifting Activity Dataset  
+
+__Culling the identification variables from the potential predictors in selection for training__  
+
+```{r culling of training dataset}
+training <- pml.training[,-which(names(pml.training) %in% c("X","user_name","raw_timestamp_part_1","raw_timestamp_part_2","cvtd_timestamp","new_window"))]
+```  
+
+__Culling the identification variables from the potential predictors in selection for testing__
+
+```{r culling of testing data}
+testing <- pml.testing[,-which(names(pml.testing) %in% c("X","user_name","raw_timestamp_part_1","raw_timestamp_part_2","cvtd_timestamp","new_window","problem_id"))]
+```  
+
+The problem_id in test set is being removed for use in prediction as it is not present in the training predictor set.
+
+### Preprocessing of training and testing data:
+
+This is to make sure the data is clean for randomForest training. Also let us examine the data for categorical variables with more than 37 levels which would not be acceptable for randomForest method
+
+We cannot have any gaps or missing data (NA) in testing dataset for prediction to work. If there are any present, we need to remove those variables from candidate predictors. In the end, we may end up with a much reduced subset of the predictors for training and testing.
+
+```{r Checking for NA in testing and training}
+testingNA <- testing[,apply(is.na(testing),2,any) == TRUE]
+dim(testingNA)
+
+testing2 <- testing[,apply(is.na(testing),2,any) == FALSE]
+dim(testing2)
+```  
+
+It appears test data frame have only 53 predictor variables which have no data gaps (no NA). So we can only count on 53 predictors for training and prediction.
+
+```{r preliminary examination of training and testing data}
+training2 <- training[,apply(!is.na(training),2,sum) == nrow(training)]
+
+# The only difference between training and test dataset is the outcome variable (classe)
+setdiff(names(training2),names(testing2))
+```  
+
+## Application of Random Forest Algorithm for Classification
+
+```{r set seed}
+set.seed(12345)
+```  
+
+Due to excessive computation time and memory requirements during training, the approach taken here is to compute the models during training, and then save the models to disk as a native RData files. The saved model files can be loaded into memory during the knitting time.
+
+To evaluate the training efficacy of Random Forest for the given training set, let us conduct a trial by dividing the training data into a training (sample probability = 0.7) and validation test subsets. Since the test subset created in this manner has known class for validation, we can examine the confusion matrix strictly for validation purposes. Once we are satisfied that Random Forest is yielding good results with the trail test set, we can proceed to use the complete training dataset for the classification task.
+
+```{r Divide training dataset into training and test datasets strictly tfor evaluation of Random Forest}
+InTrain<-createDataPartition(y=training2$classe,p=0.7,list=FALSE)
+training1<-training2[InTrain,]
+testing1 <- training2[-InTrain,]
+
+# Develop the model and then save it to disk and reload it back for knitr generation
+
+# rfTrialMod <-train(classe ~ .,data=training1, method="rf",
+#                    proximity=TRUE,allowParallel=TRUE, importance=TRUE)
+# 
+# save(rfTrialMod, file="./rfTrialMod.Rdata")
+
+load(file="./rfTrialMod.Rdata")
+
+rfTrialPredict <- predict(rfTrialMod, testing1)
+testing1$predRight <- rfTrialPredict==testing1$classe
+table(rfTrialPredict,testing1$classe)
+
+length(testing1$predRight[testing1$predRight == TRUE])
+length(testing1$predRight[testing1$predRight == FALSE])
+```
+
+From the trial assessment of the Random Forest with 70% training and 30% test subset, we see that the classification appears to be good with only 21 out of 5864. So we can now proceed with developing Random Forest model with the full training set. The model developed with the full training set will be used for the final test vector classification for the second part of the project.
+
+In order to compare K-fold cross-validation candidates for optimal classification, let us use two cases: K=5 and K=10 for the full training set:
+
+__Case A: Cross-Validation, K=5__
+
+Other parameters considered for evaluation: 
+* train control method is cv (cross-validation) with number = 5  
+* proximity = TRUE  
+* importance = TRUE for ranking predictors for mean decreasing error or mean decreasing Gini  
+* allowParallel = TRUE to enable multi-thread processing  
+
+In order to manage the computational time, use allowParallel=TRUE from doParallel package.
+
+```{r train with rf method}
+# modelFit_K5 <-train(classe ~ .,data=training2, method="rf",
+#                  trControl=trainControl(method="cv",number=5),
+#                  proximity=TRUE,allowParallel=TRUE, importance=TRUE)
+
+# save(modelFit_K5, file="./modelFit_K5.Rdata")
+
+load(file="./modelFit_K5.Rdata")
+print(modelFit_K5$finalModel)
+```  
+
+__Case B: Cross-Validation, K=10__
+
+Other parameters considered for evaluation: 
+* train control method is cv (cross-validation) with number = 10  
+* proximity = TRUE  
+* importance = TRUE for ranking predictors for mean decreasing error or mean decreasing Gini  
+* allowParallel = TRUE to enable multi-thread processing  
+
+```{r RF with 10 fold crossvalidation}
+set.seed(1222)
+
+# Compute the model and save the model to disk for saving very long training time. The saved model is loaded back during knitr execution.
+# modelFit_K10 <-train(classe ~ .,data=training2, method="rf",
+#                  trControl=trainControl(method="cv",number=10),
+#                  proximity=TRUE,allowParallel=TRUE, importance=TRUE)
+#
+# save(modelFit_K10, file="./modelFit_K10.Rdata")
+
+load(file="./modelFit_K10.Rdata")
+print(modelFit_K10$finalModel)
+```  
+
+__Case C: Direct call of randomForest (ntree=1000) for other useful plots__
+
+Parameters considered for evaluation:  
+* No Cross-Validation: As per Reference 3 on Random Forests, cross-validation is not needed for randomForests as randomForest algorithm uses bootstrap with replacement      
+* draw ntree=1000 bootstrap samples from original sample with replacement  
+* proximity = TRUE  
+* importance = TRUE for ranking predictors by permutation importance and Gini importance      
+
+```{r Random Forest with ntree equal to 1000}
+
+set.seed(123123)
+
+# modelFit.rf.1000 <- randomForest(classe ~ .,data=training2, ntree=1000, keep.forest=TRUE,
+#                                   proximity=TRUE, importance=TRUE, allowParallel=TRUE)
+
+# save(modelFit.rf.1000, file="./modelFit_rf.1000.Rdata")
+
+load(file="./modelFit_rf.1000.Rdata")
+print(modelFit.rf.1000)
+```  
+
+OOB (Out-of-bag) error rate is 0.17%, which is slightly higher than case A and case B, which are train rf with cross-validation.
+
+The Confusion matrix indicates reduced class error (mis-classification) for only class A, but slightly higher classification error for other three classes: B,C, and D. This perhaps can be explained by the fact that the randomForest created in this case is created by ntree=1000 compared to ntree=500 selected by train to optimize accuracy. Does ntree=1000 suggest overfit and perhaps also a bias towards class A which has much higher number of training samples than the other classes?
+
+### Plots of the model fit and variable importance (decreasing permutation and Gini importance)  
+
+```{r Random Forest Model Plot, fig.width=8, fig.height=6}
+plot(modelFit.rf.1000, main="Classification Error vs Number of Trees in Random Forest")
+```  
+
+The plot above indicates that the classification error rate declines rapidly as ntree exceeds 50. 
+
+```{r Random Forest Variable Importance Plot, fig.width=8, fig.height=8}
+varImpPlot(modelFit.rf.1000,main="Ranking of Predictors by Descending Importance")
+```
+
+This plot indicates ranking of predictors in terms of their permutation and Gini importance, respectively, to the model ordered in descending order of importance. In other words, the impact of dropping the lower ranked predictors will not be as significant.
+
+### Plot of margin of observations: 
+
+As per reference https://cran.r-project.org/web/packages/randomForest/randomForest.pdf, the margin of a data point is quoted as follows:
+
+_The proportion of votes for the correct class minus maximum proportion of votes for the other classes. Thus under majority votes, positive margin means correct classification, and vice versa_ 
+
+Let us plot the margin of observations.  
+
+```{r Random Forest Margin Plot, fig.width=8, fig.height=6}
+plot(margin(modelFit.rf.1000), main="Margin of Observation for Classification")
+```
+
+The margin plot above shows preponderance of positive margins indicating good strength of correct classification.
+
+### Comparison of test vector classifications: 
+
+```{r Predictions}
+# Comparison of Test Vector Prediction
+modelPred_K10 = predict(modelFit_K10, testing2)
+modelPred_K5 = predict(modelFit_K5, testing2)
+modelPred_1000 = predict(modelFit.rf.1000, testing2)
+
+modelPred_K10
+modelPred_K5
+modelPred_1000
+```  
+
+The three RF model variants are in agreement with their classification outcomes for the tiven 20 test vectors. 
+
+### Class Probability Matrix
+
+```{r Comparison of Class Probability Matrix}
+modelPred_K10_Prob = predict(modelFit_K10, testing2, type = "prob")
+modelPred_1000_Prob = predict(modelFit.rf.1000, testing2, type= "prob")
+ 
+modelPred_K10_Prob
+modelPred_1000_Prob
+```  
+
+### Histogram of random forest tree sizes  
+
+```{r Histogram of tree sizes, fig.width=8, fig.height=6}
+# Histogram of the tree sizes in the forest
+hist(treesize(modelFit.rf.1000))
+```  
+
+
+
+###Identification of outliers in training dataset by class identification:  
+
+```{r Random Forest Outliers Plot, fig.width=8, fig.height=6}
+plot(outlier(modelFit.rf.1000), type="h", col=c("red","green","blue","purple","orange")[as.numeric(training2$classe)], main="Random Forest Outliers") 
+```
+
+The colors are chosen to visualize the class boundaries for clarity. It appears from the above plot that the training samples are clustered relatively tightly around each class with few outliers. 
+
+__Case D: Boosting Method__
+
+As a final candidate, let us explore Boosting to see if the accuracy can be increased relative to RF.
+
+```{r Boosting method}
+# modFitGBM <- train(training2[,-54], training2$classe, method="gbm", 
+#                    verbose=FALSE)
+# 
+# save(modFitGBM, file="./modFitGBM.Rdata")
+
+load(file="./modFitGBM.Rdata")
+
+print(modFitGBM) 
+
+predict(modFitGBM,testing2)
+```  
+
+## Conclusions  
+
+The accuracy of the best RF model (10 fold RF) is 0.9986240 at mtry = 27 and ntree = 500. Boosting model shows an optimal accuracy of 0.9858819 at ntree=150 and at interaction.depth=3. So it appears that RF with 10-fold cross-validation outperforms Boosting slightly in accuracy for this particular dataset.
